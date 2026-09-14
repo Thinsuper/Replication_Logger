@@ -9,7 +9,7 @@ local Player = Players.LocalPlayer
 local PlayerGui = Player:WaitForChild("PlayerGui")
 
 if game.PlaceId ~= 10449761463 then
-    Player:Kick("wrong game to use this pal")
+	Player:Kick("wrong game to use this pal")
 end
 
 for _, UI in PlayerGui:GetChildren() do
@@ -228,8 +228,8 @@ local function tableToString(value, indent)
 
 	if typeof(value) == "table" then
 		local parts = {}
-		local spacing = string.rep("    ", indent)
-		local nextSpacing = string.rep("    ", indent + 1)
+		local spacing = string.rep("\t", indent)
+		local nextSpacing = string.rep("\t", indent + 1)
 
 		for k, v in pairs(value) do
 			table.insert(parts, nextSpacing .. formatKey(k) .. " = " .. tableToString(v, indent + 1))
@@ -241,7 +241,20 @@ local function tableToString(value, indent)
 
 		return "{\n" .. table.concat(parts, ",\n") .. "\n" .. spacing .. "}"
 	elseif typeof(value) == "Instance" then
-		return value:GetFullName()
+	local Path = value:GetFullName():split(".")
+	local Result = Path[1]
+
+	for i = 2, #Path do
+		local Name = Path[i]
+
+		if Name:match("^[%a_][%w_]*$") then
+			Result ..= "." .. Name
+		else
+			Result ..= '["' .. Name:gsub("\\", "\\\\"):gsub('"', '\\"') .. '"]'
+		end
+	end
+
+	return Result
 	elseif typeof(value) == "string" then
 		return string.format("%q", value)
 	elseif typeof(value) == "Vector3" then
@@ -271,30 +284,134 @@ local function hasEffectKey(tbl)
 	return false
 end
 
-local function wrapWithEffectFirst(arg)
+local function wrapWithEffectFirst(arg, indent)
+	indent = indent or 0
+
 	if typeof(arg) == "table" then
 		local parts = {}
+		local spacing = string.rep("\t", indent)
+		local nextSpacing = string.rep("\t", indent + 1)
 
 		if hasEffectKey(arg) then
-			table.insert(parts, "Effect = " .. tableToString(arg.Effect))
+			table.insert(parts, nextSpacing .. "Effect = " .. tableToString(arg.Effect, indent + 1))
 
 			for k, v in pairs(arg) do
 				if k ~= "Effect" then
-					table.insert(parts, formatKey(k) .. " = " .. tableToString(v))
+					table.insert(parts, nextSpacing .. formatKey(k) .. " = " .. tableToString(v, indent + 1))
 				end
 			end
 		else
-			table.insert(parts, 'Effect = ""')
+			table.insert(parts, nextSpacing .. 'Effect = ""')
 
 			for k, v in pairs(arg) do
-				table.insert(parts, formatKey(k) .. " = " .. tableToString(v))
+				table.insert(parts, nextSpacing .. formatKey(k) .. " = " .. tableToString(v, indent + 1))
 			end
 		end
 
-		return "{\n    " .. table.concat(parts, ",\n    ") .. "\n}"
+		return spacing .. "{\n" .. table.concat(parts, ",\n") .. "\n" .. spacing .. "}"
 	end
 
-	return "{\n    Effect = \"\",\n    " .. tableToString(arg) .. "\n}"
+	return "{\n" .. string.rep("\t", indent + 1) .. "Effect = \"\",\n" .. string.rep("\t", indent + 1) .. tableToString(arg, indent + 1) .. "\n" .. string.rep("\t", indent) .. "}"
+end
+
+local function escapeRichText(Text)
+	local Result = Text:gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;")
+	return Result
+end
+
+local function colorText(Text, Color)
+	return '<font color="' .. Color .. '">' .. escapeRichText(Text) .. "</font>"
+end
+
+local function highlightLua(Text)
+	local Result = {}
+	local Position = 1
+	local Length = #Text
+
+	local PropertyColor = "#BCBEC8"
+	local StringColor = "#8EE9B6"
+	local NumberColor = "#F2BA2A"
+	local BooleanColor = "#F2BA2A"
+	local BuiltinColor = "#8FB4FF"
+	local InstanceColor = "#70A0FF"
+	local KeywordColor = "#EB7973"
+	local TextColor = "#BCBEC8"
+
+	while Position <= Length do
+		local Character = Text:sub(Position, Position)
+
+		if Character == '"' then
+			local Start = Position
+			Position += 1
+
+			while Position <= Length do
+				local Current = Text:sub(Position, Position)
+
+				if Current == "\\" then
+					Position += 2
+				elseif Current == '"' then
+					Position += 1
+					break
+				else
+					Position += 1
+				end
+			end
+
+			table.insert(Result, colorText(Text:sub(Start, Position - 1), StringColor))
+		elseif Character:match("%d") or (Character == "-" and Text:sub(Position + 1, Position + 1):match("%d")) then
+			local Start = Position
+
+			if Character == "-" then
+				Position += 1
+			end
+
+			while Position <= Length and Text:sub(Position, Position):match("[%d%.]") do
+				Position += 1
+			end
+
+			table.insert(Result, colorText(Text:sub(Start, Position - 1), NumberColor))
+		elseif Character:match("[%a_]") then
+			local Start = Position
+
+			while Position <= Length and Text:sub(Position, Position):match("[%w_]") do
+				Position += 1
+			end
+
+			local Word = Text:sub(Start, Position - 1)
+			local Next = Position
+
+			while Next <= Length and Text:sub(Next, Next):match("%s") do
+				Next += 1
+			end
+
+			local Previous = Start > 1 and Text:sub(Start - 1, Start - 1) or ""
+			local IsInstancePath = Previous == "."
+
+			if Word == "true" or Word == "false" or Word == "nil" then
+				table.insert(Result, colorText(Word, BooleanColor))
+			elseif Word == "local" or Word == "function" or Word == "return" or Word == "if" or Word == "then" or Word == "else" or Word == "elseif" or Word == "end" or Word == "for" or Word == "while" or Word == "do" or Word == "repeat" or Word == "until" or Word == "break" or Word == "continue" or Word == "and" or Word == "or" or Word == "not" or Word == "in" then
+				table.insert(Result, colorText(Word, KeywordColor))
+			elseif Word == "Vector3" or Word == "CFrame" or Word == "Color3" or Word == "NumberRange" or Word == "Workspace" or Word == "game" then
+	if Text:sub(Position, Position) == "." and Text:sub(Position + 1, Position + 3) == "new" then
+		table.insert(Result, colorText(Word .. ".new", BuiltinColor))
+		Position += 4
+	else
+		table.insert(Result, colorText(Word, BuiltinColor))
+	end
+			elseif IsInstancePath and Text:sub(Start - 1, Start - 1) ~= '"' then
+				table.insert(Result, colorText(Word, InstanceColor))
+			elseif Text:sub(Next, Next) == "=" then
+				table.insert(Result, colorText(Word, PropertyColor))
+			else
+				table.insert(Result, escapeRichText(Word))
+			end
+		else
+			table.insert(Result, escapeRichText(Character))
+			Position += 1
+		end
+	end
+
+	return table.concat(Result)
 end
 
 local function createEntry(text, valueToCopy)
@@ -352,16 +469,18 @@ local function createEntry(text, valueToCopy)
 	Data.Position = UDim2.fromOffset(10, 36)
 	Data.BackgroundColor3 = Color3.fromRGB(19, 19, 22)
 	Data.BorderSizePixel = 0
-	Data.Text = valueToCopy
+	Data.Text = highlightLua(valueToCopy)
 	Data.TextColor3 = Color3.fromRGB(185, 185, 190)
 	Data.Font = Enum.Font.Code
 	Data.TextSize = 13
 	Data.TextXAlignment = Enum.TextXAlignment.Left
 	Data.TextYAlignment = Enum.TextYAlignment.Top
 	Data.TextWrapped = false
+	Data.RichText = true
 	Data.AutomaticSize = Enum.AutomaticSize.Y
 	Data.Visible = false
 	Data.Active = true
+	Data:SetAttribute("RawText", valueToCopy)
 	Data.Parent = Entry
 
 	local DataPadding = Instance.new("UIPadding")
@@ -378,34 +497,34 @@ local function createEntry(text, valueToCopy)
 	local Expanded = false
 
 	local function setExpanded(Value)
-	Expanded = Value
+		Expanded = Value
 
-	if Expanded then
-		Arrow.Text = "v"
-		Data.Visible = true
-		Data.Size = UDim2.new(1, -20, 0, 0)
+		if Expanded then
+			Arrow.Text = "v"
+			Data.Visible = true
+			Data.Size = UDim2.new(1, -20, 0, 0)
 
-		task.defer(function()
-			local Height = Data.AbsoluteSize.Y + 42
+			task.defer(function()
+				local Height = Data.AbsoluteSize.Y + 42
 
-			TweenService:Create(Entry, TweenInfo.new(0.15, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-				Size = UDim2.new(1, -12, 0, Height)
+				TweenService:Create(Entry, TweenInfo.new(0.15, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+					Size = UDim2.new(1, -12, 0, Height)
+				}):Play()
+			end)
+		else
+			Arrow.Text = ">"
+
+			TweenService:Create(Entry, TweenInfo.new(0.15, Enum.EasingStyle.Quint, Enum.EasingDirection.In), {
+				Size = UDim2.new(1, -12, 0, 32)
 			}):Play()
-		end)
-	else
-		Arrow.Text = ">"
 
-		TweenService:Create(Entry, TweenInfo.new(0.15, Enum.EasingStyle.Quint, Enum.EasingDirection.In), {
-			Size = UDim2.new(1, -12, 0, 32)
-		}):Play()
-
-		task.delay(0.15, function()
-			if not Expanded and Data.Parent then
-				Data.Visible = false
-			end
-		end)
+			task.delay(0.15, function()
+				if not Expanded and Data.Parent then
+					Data.Visible = false
+				end
+			end)
+		end
 	end
-end
 
 	Header.MouseButton1Click:Connect(function()
 		setExpanded(not Expanded)
@@ -416,7 +535,7 @@ end
 			setclipboard(valueToCopy)
 
 			local OldText = Data.Text
-			Data.Text = "Copied!"
+			Data.Text = '<font color="#6A9955">Copied!</font>'
 
 			task.delay(0.5, function()
 				if Data and Data.Parent then
@@ -505,8 +624,12 @@ SaveButton.MouseButton1Click:Connect(function()
 		if Entry:IsA("Frame") and Entry.Name == "Entry" then
 			local Data = Entry:FindFirstChild("Data")
 
-			if Data and Data.Text ~= "" then
-				table.insert(Logs, Data.Text)
+			if Data then
+				local RawText = Data:GetAttribute("RawText")
+
+				if RawText and RawText ~= "" then
+					table.insert(Logs, RawText)
+				end
 			end
 		end
 	end
@@ -527,7 +650,7 @@ SaveButton.MouseButton1Click:Connect(function()
 		local Exists
 
 		pcall(function()
-			Exists = readfile("ReplicationLogs" .. Filename .. ".txt")
+			Exists = readfile("ReplicationLogs_" .. Filename .. ".lua")
 		end)
 
 		if Exists then
@@ -541,14 +664,14 @@ SaveButton.MouseButton1Click:Connect(function()
 	local Content = table.concat(Logs, "\n")
 	Content = Content:gsub("\n", "\r\n")
 
-	writefile("ReplicationLogs" .. Filename .. ".txt", Content)
+	writefile("ReplicationLogs_" .. Filename .. ".lua", Content)
 
 	StarterGui:SetCore("SendNotification", {
-	   Title = "Replication Logger",
-	   Text = "Logs saved successfully!\nReplicationLogs" .. Filename .. ".txt",
-	   Icon = "rbxassetid://176572847",
-	   Duration = 5,
-    })
+		Title = "Replication Logger",
+		Text = "Logs saved successfully!\ReplicationLogs_" .. Filename .. ".lua",
+		Icon = "rbxassetid://176572847",
+		Duration = 5,
+	})
 end)
 
 AddBlacklist.MouseButton1Click:Connect(function()
@@ -630,7 +753,7 @@ ReplicationEvent.OnClientEvent:Connect(function(...)
 			Name = Arg.Effect or Arg.Type or Name
 		end
 
-		table.insert(Data, wrapWithEffectFirst(Arg))
+		table.insert(Data, wrapWithEffectFirst(Arg, 0))
 	end
 
 	createEntry(tostring(Name), table.concat(Data, "\n"))
